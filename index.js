@@ -17,6 +17,37 @@ var fs = require('fs');
 var path = require('path');
 var mkdirp = require('mkdirp');
 
+function slug(title) {
+    if (!title) {
+        return '';
+    }
+    return title.trim().replace(/\s/g, '_').replace(/\W/g, '').replace(/_+/g, '_');
+}
+
+function testFilename(test) {
+    if (!test) {
+        return;
+    }
+
+    var filename = '';
+    if (test.parent) {
+        filename = slug(test.parent.title) + '--';
+    }
+
+    filename += slug(test.title).substring(0, 251);
+    return filename;
+}
+
+function appendImageUrlToErrorStack(imageObject, err) {
+    var output = (imageObject.imageUrl) ?
+        "\nnemo-screenshot\n" + imageObject.imageUrl + "\n" :
+        "\nnemo-screenshot::" + JSON.stringify(imageObject) + "::nemo-screenshot";
+
+    if (err) {
+        err.stack = err.stack + output;
+    }
+}
+
 module.exports = {
     /**
      *  setup - initialize this functionality during nemo.setup
@@ -24,11 +55,6 @@ module.exports = {
      *  @param nemo {Object} - nemo namespace
      *  @param callback {Function} - errback function
      */
-
-
-
-
-
     "setup": function (_screenShotPath, _autoCaptureOptions, _nemo, _callback) {
 
         var screenShotPath, autoCaptureOptions, nemo, callback, driver, flow;
@@ -72,7 +98,6 @@ module.exports = {
                 driver.takeScreenshot().then(function (screenImg) {
                     imageName = filename + ".png";
 
-
                     var imageDir = path.dirname(path.resolve(screenShotPath, imageName));
 
                     mkdirp.sync(imageDir);
@@ -109,12 +134,7 @@ module.exports = {
             "done": function (filename, done, err) {
                 this.snap(filename).
                     then(function (imageObject) {
-                        var output = (imageObject.imageUrl) ?
-                        "\nnemo-screenshot\n" + imageObject.imageUrl + "\n" :
-                        "\nnemo-screenshot::" + JSON.stringify(imageObject) + "::nemo-screenshot";
-                        if (err) {
-                            err.stack = err.stack + output;
-                        }
+                        appendImageUrlToErrorStack(imageObject, err);
                         done(err);
                     }, function (scerror) {
                         console.log("nemo-screenshot encountered some error.", scerror.toString());
@@ -147,12 +167,19 @@ module.exports = {
                 if (exception._nemoScreenshotHandled) {
                     throw exception;
                 }
+
                 driver.getSession().then(function (session) {
                     if (session) {
                         var filename = 'ScreenShot_onException-' + process.pid + '-' + new Date().getTime();
+                        var curTest = global.mochaCurrentTest;
+                        if (curTest) {
+                            filename = testFilename(curTest);
+                        }
+
                         var screenShotFileName = path.resolve(screenShotPath, filename);
                         flow.wait(function () {
-                            return nemo.screenshot.snap(screenShotFileName).then(function () {
+                            return nemo.screenshot.snap(screenShotFileName).then(function (imageObject) {
+                                appendImageUrlToErrorStack(imageObject, exception);
                                 exception._nemoScreenshotHandled = true;
                                 throw exception;
                             }, 10000);
